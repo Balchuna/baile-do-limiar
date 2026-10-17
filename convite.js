@@ -126,7 +126,7 @@ function medir() {
 
 /* ───────────────────── som ───────────────────── */
 const Som = {
-  ctx: null, master: null, gMusica: null, iniciado: false, musicaOk: true,
+  ctx: null, master: null, iniciado: false, musicaOk: true,
   mudo: guardar.lerLocal('mudo') === '1',
   vol: clamp(parseFloat(guardar.lerLocal('volume') ?? '0.3'), 0, 1),
   ruido: null, arrasto: null, fade: 0, fadeTw: null,
@@ -134,13 +134,10 @@ const Som = {
 const curva = v => Math.pow(v, 1.6);
 function alvoMusica() { return Som.mudo ? 0 : curva(Som.vol) * .9; }
 function aplicarVolume(rampa = .25) {
-  const a = alvoMusica();
-  if (Som.gMusica) {
-    const t = Som.ctx.currentTime, g = Som.gMusica.gain;
-    g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(a * Som.fade, t + rampa);
-  } else {
-    musica.volume = clamp(a * Som.fade, 0, 1);
-  }
+  /* a música toca direto no elemento: pelo WebAudio o iPhone a calaria no modo silencioso.
+     No iOS o volume do elemento é fixo; o mudo continua valendo. */
+  musica.volume = clamp(alvoMusica() * Som.fade, 0, 1);
+  musica.muted = Som.mudo;
   if (Som.master) Som.master.gain.value = Som.mudo ? 0 : clamp(Som.vol * 1.5, 0, 1);
   btnSom.setAttribute('aria-pressed', Som.mudo ? 'true' : 'false');
   btnSom.setAttribute('aria-label', Som.mudo ? 'Ativar a música' : 'Silenciar a música');
@@ -148,19 +145,12 @@ function aplicarVolume(rampa = .25) {
 function iniciarAudio() {
   if (Som.iniciado) return;
   Som.iniciado = true;
-  try {
+  /* o contexto dos efeitos nasce uma vez só, mesmo se o primeiro play() for recusado */
+  if (!Som.ctx) try {
     const AC = window.AudioContext || window.webkitAudioContext;
     Som.ctx = new AC();
     Som.master = Som.ctx.createGain();
     Som.master.connect(Som.ctx.destination);
-    /* por http(s), a música passa pelo WebAudio (permite volume no iOS);
-       por file://, o navegador silenciaria essa rota, então fica no elemento */
-    if (location.protocol !== 'file:') {
-      const fonte = Som.ctx.createMediaElementSource(musica);
-      Som.gMusica = Som.ctx.createGain();
-      Som.gMusica.gain.value = 0;
-      fonte.connect(Som.gMusica).connect(Som.ctx.destination);
-    }
     const n = Som.ctx.sampleRate;
     Som.ruido = Som.ctx.createBuffer(1, n * 2, n);
     const d = Som.ruido.getChannelData(0);
